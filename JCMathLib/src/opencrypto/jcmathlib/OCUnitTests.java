@@ -23,6 +23,7 @@ public class OCUnitTests extends Applet {
 
     // INStructions
     // Card Management
+    public final static byte INS_INIT                   = (byte) 0x00;
     public final static byte INS_SETUP                  = (byte) 0x01;
     public final static byte INS_STATUS                 = (byte) 0x02;
     public final static byte INS_CLEANUP                = (byte) 0x03;
@@ -92,53 +93,11 @@ public class OCUnitTests extends Applet {
     
     Integer         m_testINT1;
     Integer         m_testINT2;
+    
+    boolean         bInitFlag = false;
 
     public OCUnitTests() {
-        m_memoryInfo = new short[(short) (7 * 3)]; // Contains RAM and EEPROM memory required for basic library objects 
-        m_memoryInfoOffset = snapshotAvailableMemory((short) 1, m_memoryInfo, m_memoryInfoOffset);
-        if (bTEST_256b_CURVE) {
-            m_ecc = new ECConfig((short) 256);
-        }
-        if (bTEST_512b_CURVE) {
-            m_ecc = new ECConfig((short) 512);
-        }
-        m_memoryInfoOffset = snapshotAvailableMemory((short) 2, m_memoryInfo, m_memoryInfoOffset);
         
-
-        // Pre-allocate test objects (no new allocation for every tested operation)
-        if (bTEST_256b_CURVE) {
-            m_testCurve = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, SecP256r1.G, SecP256r1.r);
-            m_memoryInfoOffset = snapshotAvailableMemory((short) 3, m_memoryInfo, m_memoryInfoOffset);
-            // m_testCurveCustom and m_testPointCustom will have G occasionally changed so we need separate ECCurve
-            m_customG = new byte[(short) SecP256r1.G.length];
-            Util.arrayCopyNonAtomic(SecP256r1.G, (short) 0, m_customG, (short) 0, (short) SecP256r1.G.length);
-            m_testCurveCustom = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, m_customG, SecP256r1.r);
-        }
-        if (bTEST_512b_CURVE) {
-            m_testCurve = new ECCurve(false, P512r1.p, P512r1.a, P512r1.b, P512r1.G, P512r1.r);
-            // m_testCurveCustom and m_testPointCustom will have G occasionally changed so we need separate ECCurve
-            m_customG = new byte[(short) P512r1.G.length];
-            Util.arrayCopyNonAtomic(P512r1.G, (short) 0, m_customG, (short) 0, (short) P512r1.G.length);
-            m_testCurveCustom = new ECCurve(false, P512r1.p, P512r1.a, P512r1.b, m_customG, P512r1.r);
-        }
-        
-        m_memoryInfoOffset = snapshotAvailableMemory((short) 5, m_memoryInfo, m_memoryInfoOffset);
-        m_testPoint1 = new ECPoint(m_testCurve, m_ecc.ech);
-        m_memoryInfoOffset = snapshotAvailableMemory((short) 6, m_memoryInfo, m_memoryInfoOffset);
-        m_testPoint2 = new ECPoint(m_testCurve, m_ecc.ech);
-        m_testPointCustom = new ECPoint(m_testCurveCustom, m_ecc.ech);
-
-        // Testing Bignat objects used in tests
-        m_memoryInfoOffset = snapshotAvailableMemory((short) 7, m_memoryInfo, m_memoryInfoOffset);
-        byte memoryType = JCSystem.MEMORY_TYPE_TRANSIENT_RESET;
-        m_testBN1 = new Bignat(m_ecc.MAX_BIGNAT_SIZE, memoryType, m_ecc.bnh);
-        m_memoryInfoOffset = snapshotAvailableMemory((short) 8, m_memoryInfo, m_memoryInfoOffset);
-        m_testBN2 = new Bignat(m_ecc.MAX_BIGNAT_SIZE, memoryType, m_ecc.bnh);
-        m_testBN3 = new Bignat(m_ecc.MAX_BIGNAT_SIZE, memoryType, m_ecc.bnh);
-        
-        short intLen = 4;
-        m_testINT1 = new Integer(intLen, m_ecc.bnh);
-        m_testINT2 = new Integer(intLen, m_ecc.bnh);
     }
     
     public static void install(byte[] bArray, short bOffset, byte bLength) {
@@ -151,7 +110,9 @@ public class OCUnitTests extends Applet {
     }
 
     public boolean select() {
-        updateAfterReset();
+    	if (bInitFlag) {
+			updateAfterReset();
+    	}
         return true;
     }
     public void process(APDU apdu) {
@@ -171,7 +132,63 @@ public class OCUnitTests extends Applet {
         short dataLen = apdu.setIncomingAndReceive(); // returns length of data field
 
         try {
+        	// After the installation is completed, it should be initialized. 
+            // After the initialization is completed, the initialization is no longer needed in the subsequent use.
+            if (!bInitFlag && (INS_INIT != apdubuf[ISO7816.OFFSET_INS])) {
+                ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+            }
             switch (apdubuf[ISO7816.OFFSET_INS]) {
+				case INS_INIT:
+                    if (!bInitFlag) {
+                        m_memoryInfo = new short[(short) (7 * 3)]; // Contains RAM and EEPROM memory required for basic library objects 
+                        m_memoryInfoOffset = snapshotAvailableMemory((short) 1, m_memoryInfo, m_memoryInfoOffset);
+                        if (bTEST_256b_CURVE) {
+                            m_ecc = new ECConfig((short) 256);
+                        }
+                        if (bTEST_512b_CURVE) {
+                            m_ecc = new ECConfig((short) 512);
+                        }
+                        m_memoryInfoOffset = snapshotAvailableMemory((short) 2, m_memoryInfo, m_memoryInfoOffset);
+
+
+                        // Pre-allocate test objects (no new allocation for every tested operation)
+                        if (bTEST_256b_CURVE) {
+                            m_testCurve = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, SecP256r1.G, SecP256r1.r);
+                            m_memoryInfoOffset = snapshotAvailableMemory((short) 3, m_memoryInfo, m_memoryInfoOffset);
+                            // m_testCurveCustom and m_testPointCustom will have G occasionally changed so we need separate ECCurve
+                            m_customG = new byte[(short) SecP256r1.G.length];
+                            Util.arrayCopyNonAtomic(SecP256r1.G, (short) 0, m_customG, (short) 0, (short) SecP256r1.G.length);
+                            m_testCurveCustom = new ECCurve(false, SecP256r1.p, SecP256r1.a, SecP256r1.b, m_customG, SecP256r1.r);
+                        }
+                        if (bTEST_512b_CURVE) {
+                            m_testCurve = new ECCurve(false, P512r1.p, P512r1.a, P512r1.b, P512r1.G, P512r1.r);
+                            // m_testCurveCustom and m_testPointCustom will have G occasionally changed so we need separate ECCurve
+                            m_customG = new byte[(short) P512r1.G.length];
+                            Util.arrayCopyNonAtomic(P512r1.G, (short) 0, m_customG, (short) 0, (short) P512r1.G.length);
+                            m_testCurveCustom = new ECCurve(false, P512r1.p, P512r1.a, P512r1.b, m_customG, P512r1.r);
+                        }
+
+                        m_memoryInfoOffset = snapshotAvailableMemory((short) 5, m_memoryInfo, m_memoryInfoOffset);
+                        m_testPoint1 = new ECPoint(m_testCurve, m_ecc.ech);
+                        m_memoryInfoOffset = snapshotAvailableMemory((short) 6, m_memoryInfo, m_memoryInfoOffset);
+                        m_testPoint2 = new ECPoint(m_testCurve, m_ecc.ech);
+                        m_testPointCustom = new ECPoint(m_testCurveCustom, m_ecc.ech);
+
+                        // Testing Bignat objects used in tests
+                        m_memoryInfoOffset = snapshotAvailableMemory((short) 7, m_memoryInfo, m_memoryInfoOffset);
+                        byte memoryType = JCSystem.MEMORY_TYPE_TRANSIENT_RESET;
+                        m_testBN1 = new Bignat(m_ecc.MAX_BIGNAT_SIZE, memoryType, m_ecc.bnh);
+                        m_memoryInfoOffset = snapshotAvailableMemory((short) 8, m_memoryInfo, m_memoryInfoOffset);
+                        m_testBN2 = new Bignat(m_ecc.MAX_BIGNAT_SIZE, memoryType, m_ecc.bnh);
+                        m_testBN3 = new Bignat(m_ecc.MAX_BIGNAT_SIZE, memoryType, m_ecc.bnh);
+
+                        short intLen = 4;
+                        m_testINT1 = new Integer(intLen, m_ecc.bnh);
+                        m_testINT2 = new Integer(intLen, m_ecc.bnh);
+                        
+                        bInitFlag = true;
+                    }
+					break;
                 case INS_CLEANUP:
                     m_ecc.unlockAll();
                     break;
